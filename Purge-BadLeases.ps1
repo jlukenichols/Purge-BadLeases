@@ -1,19 +1,23 @@
 ﻿<#
 .SYNOPSIS
   Name: Purge-BadLeases.ps1
-  The purpose of this script is to remove all bad DHCP leases from a Microsoft DHCP server
+  The purpose of this script is to remove all bad DHCP leases from a list Microsoft DHCP servers
   
 .DESCRIPTION
-  In order to prevent bad leases from filling up the DHCP pool, this script will find all the bad leases on the local server and then remove them.
+  In order to prevent bad leases from filling up the DHCP pool, this script will find all the bad leases from the list of DHCP servers and then remove them.
 
 .NOTES
     Release Date: 2022-09-19T12:03
-    Last Updated: 2022-09-19T12:03
+    Last Updated: 2022-09-20T14:47
    
     Author: Luke Nichols
 #>
 
 ### Begin variable definitions ###
+
+#Set server name here, it expects an array but a single-line array is fine.
+[array]$DHCPServerNames = "localhost"
+#[array]$DHCPServerNames = "server1.domain.com","server2.domain.com"
 
 $LogFilePath = "$PSScriptRoot\logs\BadLeases_$($currentYear)-$($currentMonth)-$($currentDay)T$($currentHour)$($currentMinute)$($currentSecond)$($loggingTimeZone).txt"
 $LogRotateDays = "365"
@@ -79,30 +83,37 @@ function Write-Log {
 
 ### Begin main script body ###
 
+#Clear screen to make debugging of subsequent runs in PowerShell ISE easier
 Clear-Host
 
 #Change the working directory to $PSScriptRoot
-Set-Location $PSScriptRoot
+Set-Location $PSScriptRoot #Probably unnecessary but sometimes useful
 
-#Get all the bad leases and put them into a variable
-$BadLeases =  Get-DhcpServerv4Lease -BadLeases
+foreach ($DHCPServerName in $DHCPServerNames) {
 
-#Create log file
-$LogString = "Purging bad DHCP leases..."
-Write-Log -LogString $LogString -LogFilePath $LogFilePath
-
-#Create log file header line
-$LogString = "IPAddress,ScopeID,ClientId,HostName,AddressState,LeaseExpiryTime"
-Write-Log -LogString $LogString -LogFilePath $LogFilePath
-
-#Loop through all the bad leases on the server
-foreach ($Lease in $BadLeases) {
-    #Log each lease as we delete it
-    $LogString = "$($Lease.IPAddress),$($Lease.ScopeId),$($Lease.ClientId),$($Lease.HostName),$($Lease.AddressState),$($Lease.LeaseExpiryTime)"
+    #Create log file
+    $LogString = "Purging bad DHCP leases from server $DHCPServerName"
     Write-Log -LogString $LogString -LogFilePath $LogFilePath
 
-    #Remove this lease
-    $Lease | Remove-DhcpServerv4Lease
+    #Create log file header line
+    $LogString = "IPAddress,ScopeID,ClientId,HostName,AddressState,LeaseExpiryTime"
+    Write-Log -LogString $LogString -LogFilePath $LogFilePath
+
+    #Get all the bad leases and put them into a variable
+    $BadLeases =  Get-DhcpServerv4Lease -ComputerName "$DHCPServerName" -BadLeases
+
+    #Loop through all the bad leases on this server
+    foreach ($Lease in $BadLeases) {
+        #Log each lease as we delete it
+        $LogString = "$($Lease.IPAddress),$($Lease.ScopeId),$($Lease.ClientId),$($Lease.HostName),$($Lease.AddressState),$($Lease.LeaseExpiryTime)"
+        Write-Log -LogString $LogString -LogFilePath $LogFilePath
+
+        #Remove this lease
+        $Lease | Remove-DhcpServerv4Lease
+    }
+
+    #Clear variable just to be safe
+    Remove-Variable BadLeases
 }
 
 #Close log file and rotate old logs
